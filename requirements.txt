@@ -1,0 +1,4 @@
+selenium==4.34.2
+beautifulsoup4==4.13.4
+requests==2.32.4
+fake-useragent==2.2.0

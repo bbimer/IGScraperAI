@@ -468,9 +468,16 @@ class InstagramScraperThread(threading.Thread):
         self.ready.wait()
         while True:
             try:
-                item = self.profile_queue.get(timeout=30)
+                item = self.profile_queue.get(timeout=60)
             except queue.Empty:
-                break
+                # Если очередь каналов тоже пуста — значит всё, выходим
+                if self.channel_queue.empty() and self.profile_queue.empty():
+                    print(f'[Thread {self.thread_id}] Завершает работу — очереди пусты.')
+                    break
+                else:
+                    print(f'[Thread {self.thread_id}] Ждёт новые задачи...')
+                    time.sleep(5)
+                    continue
 
             if self.target_profiles is not None and self.found_profiles >= self.target_profiles:
                 print(f'[Thread {self.thread_id}] Reached target number of profiles. Stopping.')
