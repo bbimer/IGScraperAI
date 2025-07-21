@@ -68,6 +68,45 @@ COUNTRY_SETTINGS = {
         "age_regex": r'(\d{2})\s?(?:років|роки|рік|years|вік)',
         "location_priority": ["kyiv", "kiev", "lviv", "odesa", "kharkiv", "ukraine", "україна"],
         "filter_prompt": "Це чоловік з України? Перевірте ім'я, нікнейм, біо. Відфільтруйте жінок, нетрадиційні орієнтації."
+    },
+    "IT & ES": {
+        "name_patterns": [
+            # Italian
+            "it", "ita", "italy", "roma", "milano", "napoli",
+            # Spanish
+            "es", "esp", "spain", "españa", "madrid", "barcelona", "sevilla", "valencia"
+        ],
+        "bio_keywords": [
+            # Italian
+            "italy", "italiano", "roma", "milano", "napoli", "torino", "sicilia", "calcio",
+            "italian", "firenze", "venezia", "bologna", "padova", "bergamo",
+            # Spanish
+            "spain", "español", "españa", "madrid", "barcelona", "valencia", "sevilla", "granada",
+            "málaga", "zaragoza", "bilbao", "mallorca", "sevillista", "barça", "real madrid", "espanol"
+        ],
+        "age_regex": r'(\d{2})\s?(?:anni|años|ano|yo|yrs|years|year|age)',
+        "location_priority": [
+            # Italy
+            "rome", "milan", "naples", "turin", "palermo", "genoa", "bologna", "florence",
+            "venice", "bari", "italy", "sicily", "sardinia",
+            # Spain
+            "madrid", "barcelona", "valencia", "seville", "granada", "malaga", "zaragoza",
+            "bilbao", "alicante", "cordoba", "spain", "españa", "canary islands", "mallorca"
+        ],
+        "filter_prompt": (
+            "Strictly analyze this Instagram profile for MALE from Italy or Spain.\n"
+            "CRITERIA (all must be satisfied):\n"
+            "1. If the NAME or USERNAME is a typical MALE Italian or Spanish name (e.g. Marco, Luca, Juan, Miguel), "
+            "and the bio is empty, minimal, or contains only neutral info (city, sport, emoji, etc.), "
+            "then this is OK and can be accepted.\n"
+            "2. If the bio contains anything female (female names, -a/-ia endings, pronouns like she/her, words like miss, lady), "
+            "LGBT/rainbow/pride, marriage/family (wife, esposa, moglie, mujer, family, married, esposo, esposa, figli, hijos, kids), "
+            "beauty, fashion, makeup, cosmetics, nails, spa, or ads/business, migrants (Arabic, African, Asian names), or unclear gender — REJECT.\n"
+            "3. If the profile is unclear or suspicious, REJECT.\n"
+            "Location (Italy/Spain) is only a plus, but not required if the rest is OK.\n"
+            "If in doubt — REJECT.\n"
+            "Answer ONLY 'Yes' or 'No', and briefly explain (max 5 words)."
+        )
     }
 }
 
@@ -261,40 +300,37 @@ class InstagramScraperThread(threading.Thread):
                 self.consecutive_no = 0
 
                 while True:
-                    # Собираем ровно BATCH_SIZE профилей
                     new_usernames = self.collect_usernames_from_followers(collected_usernames)
-
                     if not new_usernames:
                         print(f'[Channel] Больше нет подписчиков в канале {channel_url}')
                         break
 
-                    # Добавляем в очередь и в множество
                     for uname in new_usernames:
                         self.profile_queue.put((uname, channel_url))
                         collected_usernames.add(uname)
 
                     print(f'[Channel] Добавлено {len(new_usernames)} профилей из {channel_url}')
 
-                    # Ждем проверки всех профилей из этой пачки
-                    batch_no = 0
-                    for _ in range(len(new_usernames)):
+                    for idx in range(len(new_usernames)):
                         _, result = self.result_queue.get()
                         if result == 'yes':
                             self.found_profiles += 1
                             self.consecutive_no = 0
                         else:
-                            batch_no += 1
+                            self.consecutive_no += 1
+                            if self.consecutive_no >= MAX_CONSECUTIVE_NO:
+                                print(f'[Channel] {MAX_CONSECUTIVE_NO} подряд "нет" - пропускаем канал')
+                                for __ in range(idx + 1, len(new_usernames)):
+                                    self.result_queue.get()
+                                break
 
-                    # Проверяем условия остановки
+                    if self.consecutive_no >= MAX_CONSECUTIVE_NO:
+                        break
+
                     if self.target_profiles and self.found_profiles >= self.target_profiles:
                         print(f'[Thread {self.thread_id}] Достигнуто целевое количество профилей')
                         break
 
-                    if batch_no == len(new_usernames):  # Все профили в пачке не прошли
-                        self.consecutive_no += batch_no
-                        if self.consecutive_no >= MAX_CONSECUTIVE_NO:
-                            print(f'[Channel] {MAX_CONSECUTIVE_NO} подряд "нет" - пропускаем канал')
-                            break
 
             except Exception as e:
                 print(f'[Channel] Ошибка: {e}')
@@ -368,21 +404,17 @@ class InstagramScraperThread(threading.Thread):
             print('   [!] No profile data for filtering')
             return 'no (no data)'
 
-        # First check with simple pattern matching
-        if self.simple_country_check(profile_data):
-            return 'yes (simple check)'
-
-        # If simple check not passed, use AI
+        # Только нейросеть решает
         prompt = self.country_settings.get("filter_prompt", "") + f"""
-Profile data:
-Name: {profile_data.get('full_name', '')}
-Username: {profile_data.get('username', '')}
-Bio: {profile_data.get('biography', '')}
-Location: {profile_data.get('location', 'not specified')}
-Age: {profile_data.get('age', 'not specified')}
+    Profile data:
+    Name: {profile_data.get('full_name', '')}
+    Username: {profile_data.get('username', '')}
+    Bio: {profile_data.get('biography', '')}
+    Location: {profile_data.get('location', 'not specified')}
+    Age: {profile_data.get('age', 'not specified')}
 
-Answer only "Yes" or "No" and briefly explain (up to 5 words)."""
-
+    Answer ONLY 'Yes' or 'No' and briefly explain (up to 5 words). Do NOT pass any profile if there is ANY suspicion of female gender, even ambiguous or unisex names. Reject all unclear and empty profiles by default.
+    """
         try:
             headers = {
                 'Authorization': f'Bearer {self.openrouter_api_key}',
@@ -488,7 +520,7 @@ Answer only "Yes" or "No" and briefly explain (up to 5 words)."""
                 if passed:
                     with open('valid_profiles.txt', 'a', encoding='utf-8') as f:
                         f.write(f'{profile_url}\t{profile_data.get("source_channel", "")}\n')
-                    print(f'[✔] PASSED FILTER! Added: {profile_url}')
+                    print(f'✅ PASSED FILTER! Added: {profile_url}')
                     self.found_profiles += 1
 
             if passed:
@@ -516,7 +548,7 @@ def main():
     print("\nAvailable countries:")
     for i, country in enumerate(COUNTRY_SETTINGS.keys(), 1):
         print(f"{i}. {country}")
-    country_choice = input("Select country (1-7): ").strip()
+    country_choice = input("Select country (1-8): ").strip()
     try:
         country_index = int(country_choice) - 1
         selected_country = list(COUNTRY_SETTINGS.keys())[country_index]
