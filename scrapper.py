@@ -10,105 +10,14 @@ import re
 import os
 import requests
 from fake_useragent import UserAgent
+from country_settings import COUNTRY_SETTINGS
 
 CHROMEDRIVER_PATH = './chromedriver-win64/chromedriver.exe'
-NUM_THREADS = 10
+NUM_THREADS = 6
 REQUEST_DELAY = 3
-MAX_CONSECUTIVE_NO = 25
-BATCH_SIZE = 45
+MAX_CONSECUTIVE_NO = 35
+BATCH_SIZE = 35
 CHROME_PROFILES_DIR = 'chrome_profiles'
-
-# Country-specific settings
-COUNTRY_SETTINGS = {
-    "UK": {
-        "name_patterns": ["uk", "brit", "eng", "london", "gb", "england", "british"],
-        "bio_keywords": ["uk", "british", "england", "london", "manchester", "ukrainian"],
-        "age_regex": r'(\d{2})\s?(?:yo|yrs|years|year|age)',
-        "location_priority": ["london", "manchester", "birmingham", "uk", "england"],
-        "filter_prompt": "Is this a male from UK? Check name, username, bio. Filter out women, non-traditional orientations."
-    },
-    "DE": {
-        "name_patterns": ["ger", "deutsch", "berlin", "munich", "de", "german", "deutsche"],
-        "bio_keywords": ["germany", "deutschland", "berlin", "munich", "hamburg", "köln"],
-        "age_regex": r'(\d{2})\s?(?:jahr|jahre|alt)',
-        "location_priority": ["berlin", "munich", "hamburg", "germany", "deutschland"],
-        "filter_prompt": "Ist das ein Mann aus Deutschland? Prüfe Name, Benutzername, Bio. Filtere Frauen, nicht-traditionelle Orientierungen."
-    },
-    "FR": {
-        "name_patterns": ["fr", "paris", "france", "français", "francais", "lyon"],
-        "bio_keywords": ["france", "paris", "lyon", "marseille", "français", "francais"],
-        "age_regex": r'(\d{2})\s?(?:ans|age)',
-        "location_priority": ["paris", "lyon", "marseille", "france"],
-        "filter_prompt": "Est-ce un homme de France? Vérifiez le nom, le pseudo, la bio. Filtrez les femmes, les orientations non traditionnelles."
-    },
-    "CH": {  # Швейцария
-        "name_patterns": ["ch", "suisse", "schweiz", "svizzera", "zürich", "geneva", "bern", "swiss"],
-        "bio_keywords": ["switzerland", "suisse", "schweiz", "svizzera", "zürich", "geneva", "basel", "bern"],
-        "age_regex": r'(\d{2})\s?(?:jahr|jahre|ans|years|alt|age)',
-        "location_priority": ["zürich", "geneva", "basel", "bern", "lausanne", "switzerland"],
-        "filter_prompt": "Ist das ein Mann aus der Schweiz? Prüfe Name, Benutzername, Bio. Filtere Frauen, nicht-traditionelle Orientierungen."
-    },
-    "PL": {  # Польша
-        "name_patterns": ["pl", "pol", "warsaw", "warszawa", "krakow", "polish", "polski"],
-        "bio_keywords": ["poland", "polska", "warsaw", "warszawa", "krakow", "gdansk", "polish"],
-        "age_regex": r'(\d{2})\s?(?:lat|rok|roku|years|wiek)',
-        "location_priority": ["warsaw", "warszawa", "krakow", "gdansk", "poland", "polska"],
-        "filter_prompt": "Czy to mężczyzna z Polski? Sprawdź imię, nazwę użytkownika, bio. Odfiltruj kobiety, nietradycyjne orientacje."
-    },
-    "NL": {  # Нидерланды
-        "name_patterns": ["nl", "nederland", "holland", "amsterdam", "rotterdam", "dutch"],
-        "bio_keywords": ["netherlands", "nederland", "holland", "amsterdam", "rotterdam", "utrecht", "dutch"],
-        "age_regex": r'(\d{2})\s?(?:jaar|years|oud|age)',
-        "location_priority": ["amsterdam", "rotterdam", "utrecht", "hague", "netherlands", "nederland"],
-        "filter_prompt": "Is dit een man uit Nederland? Controleer naam, gebruikersnaam, bio. Filter vrouwen, niet-traditionele oriëntaties."
-    },
-    "UA": {  # Украина
-        "name_patterns": ["ua", "ukr", "kyiv", "kiev", "lviv", "odesa", "ukrainian", "україна"],
-        "bio_keywords": ["ukraine", "ukrainian", "kyiv", "kiev", "lviv", "odesa", "kharkiv", "україна"],
-        "age_regex": r'(\d{2})\s?(?:років|роки|рік|years|вік)',
-        "location_priority": ["kyiv", "kiev", "lviv", "odesa", "kharkiv", "ukraine", "україна"],
-        "filter_prompt": "Це чоловік з України? Перевірте ім'я, нікнейм, біо. Відфільтруйте жінок, нетрадиційні орієнтації."
-    },
-    "IT & ES": {
-        "name_patterns": [
-            # Italian
-            "it", "ita", "italy", "roma", "milano", "napoli",
-            # Spanish
-            "es", "esp", "spain", "españa", "madrid", "barcelona", "sevilla", "valencia"
-        ],
-        "bio_keywords": [
-            # Italian
-            "italy", "italiano", "roma", "milano", "napoli", "torino", "sicilia", "calcio",
-            "italian", "firenze", "venezia", "bologna", "padova", "bergamo",
-            # Spanish
-            "spain", "español", "españa", "madrid", "barcelona", "valencia", "sevilla", "granada",
-            "málaga", "zaragoza", "bilbao", "mallorca", "sevillista", "barça", "real madrid", "espanol"
-        ],
-        "age_regex": r'(\d{2})\s?(?:anni|años|ano|yo|yrs|years|year|age)',
-        "location_priority": [
-            # Italy
-            "rome", "milan", "naples", "turin", "palermo", "genoa", "bologna", "florence",
-            "venice", "bari", "italy", "sicily", "sardinia",
-            # Spain
-            "madrid", "barcelona", "valencia", "seville", "granada", "malaga", "zaragoza",
-            "bilbao", "alicante", "cordoba", "spain", "españa", "canary islands", "mallorca"
-        ],
-        "filter_prompt": (
-            "Strictly analyze this Instagram profile for MALE from Italy or Spain.\n"
-            "CRITERIA (all must be satisfied):\n"
-            "1. If the NAME or USERNAME is a typical MALE Italian or Spanish name (e.g. Marco, Luca, Juan, Miguel), "
-            "and the bio is empty, minimal, or contains only neutral info (city, sport, emoji, etc.), "
-            "then this is OK and can be accepted.\n"
-            "2. If the bio contains anything female (female names, -a/-ia endings, pronouns like she/her, words like miss, lady), "
-            "LGBT/rainbow/pride, marriage/family (wife, esposa, moglie, mujer, family, married, esposo, esposa, figli, hijos, kids), "
-            "beauty, fashion, makeup, cosmetics, nails, spa, or ads/business, migrants (Arabic, African, Asian names), or unclear gender — REJECT.\n"
-            "3. If the profile is unclear or suspicious, REJECT.\n"
-            "Location (Italy/Spain) is only a plus, but not required if the rest is OK.\n"
-            "If in doubt — REJECT.\n"
-            "Answer ONLY 'Yes' or 'No', and briefly explain (max 5 words)."
-        )
-    }
-}
 
 
 def get_user_agent(thread_id):
@@ -138,8 +47,7 @@ Filter: {filter_result}
 
 class InstagramScraperThread(threading.Thread):
     def __init__(self, thread_id, channel_queue, profile_queue, result_queue, openrouter_api_key, mode, country,
-                 driver=None,
-                 lock=None, target_profiles=None):
+                 driver=None, lock=None, target_profiles=None, parse_location=True):
         threading.Thread.__init__(self)
         self.thread_id = thread_id
         self.channel_queue = channel_queue
@@ -157,6 +65,7 @@ class InstagramScraperThread(threading.Thread):
         self.consecutive_no = 0
         self.country = country.upper()
         self.country_settings = COUNTRY_SETTINGS.get(self.country, {})
+        self.parse_location = parse_location  # Флаг для определения сбора локаций
 
     def init_driver(self):
         chrome_options = Options()
@@ -214,19 +123,16 @@ class InstagramScraperThread(threading.Thread):
             html = self.driver.page_source
             soup = BeautifulSoup(html, 'html.parser')
 
-            # Поиск в модальном окне (новый интерфейс)
             modal = soup.find('div', attrs={'role': 'dialog'})
             links = []
 
             if modal:
                 links = modal.find_all('a', href=re.compile(r'^/[^/]+/$'))
             else:
-                # Поиск в полноразмерном списке (старый интерфейс)
                 main = soup.find('main') or soup.find('section')
                 if main:
                     links = main.find_all('a', href=re.compile(r'^/[^/]+/$'))
 
-            # Собираем новые usernames
             new_usernames = []
             for a in links:
                 try:
@@ -240,29 +146,38 @@ class InstagramScraperThread(threading.Thread):
 
             usernames.extend(new_usernames)
 
-            # Проверяем, собрали ли нужное количество
             if len(usernames) >= BATCH_SIZE:
-                usernames = usernames[:BATCH_SIZE]  # Берем ровно BATCH_SIZE
+                usernames = usernames[:BATCH_SIZE]
                 batch_collected = True
                 break
 
-            # Скроллинг в зависимости от типа интерфейса
             try:
-                if modal:
-                    # Для модального окна
-                    scrollbox = self.driver.find_element(
-                        By.XPATH, "//div[@role='dialog']//div[contains(@style, 'overflow')]")
+                scroll_containers = [
+                    "//div[@role='dialog']//div[contains(@style, 'overflow')]",
+                    "//div[@role='dialog']//div[contains(@class, 'isgrP')]",
+                    "//div[@role='dialog']//div[contains(@class, '_aano')]",
+                    "//div[contains(@class, 'isgrP')]",
+                    "//div[contains(@class, '_aano')]"
+                ]
+
+                scrollbox = None
+                for xpath in scroll_containers:
+                    try:
+                        scrollbox = self.driver.find_element(By.XPATH, xpath)
+                        break
+                    except:
+                        continue
+
+                if scrollbox:
                     self.driver.execute_script(
-                        "arguments[0].scrollTop = arguments[0].scrollHeight + 300",
+                        "arguments[0].scrollTop = arguments[0].scrollTop + 800",
                         scrollbox)
                 else:
-                    # Для полноразмерного списка
                     self.driver.execute_script("window.scrollBy(0, 800)")
             except Exception as e:
                 print(f'[!] Ошибка скролла: {e}')
                 time.sleep(2)
 
-            # Проверка зацикливания
             if len(usernames) == last_count:
                 scroll_try += 1
                 if scroll_try > 10:
@@ -290,9 +205,25 @@ class InstagramScraperThread(threading.Thread):
             time.sleep(3)
 
             try:
-                # Находим кнопку подписчиков
-                followers_btn = self.driver.find_element(
-                    By.XPATH, "//a[contains(@href, '/followers')]")
+                followers_btns = [
+                    "//a[contains(@href, '/followers')]",
+                    "//div[contains(text(), 'followers')]/..",
+                    "//span[contains(text(), 'followers')]/../../.."
+                ]
+
+                followers_btn = None
+                for xpath in followers_btns:
+                    try:
+                        followers_btn = self.driver.find_element(By.XPATH, xpath)
+                        break
+                    except:
+                        continue
+
+                if not followers_btn:
+                    print(f'[Channel] Не найдена кнопка подписчиков в канале {channel_url}')
+                    self.channel_queue.task_done()
+                    continue
+
                 followers_btn.click()
                 time.sleep(3)
 
@@ -331,7 +262,6 @@ class InstagramScraperThread(threading.Thread):
                         print(f'[Thread {self.thread_id}] Достигнуто целевое количество профилей')
                         break
 
-
             except Exception as e:
                 print(f'[Channel] Ошибка: {e}')
 
@@ -367,6 +297,9 @@ class InstagramScraperThread(threading.Thread):
             return None
 
     def _get_user_location(self, username, max_posts=3):
+        if not self.parse_location:  # Если сбор локаций отключен
+            return None
+
         for attempt in range(self.max_retries):
             try:
                 if not self.safe_get(f'https://www.instagram.com/{username}/'):
@@ -404,17 +337,17 @@ class InstagramScraperThread(threading.Thread):
             print('   [!] No profile data for filtering')
             return 'no (no data)'
 
-        # Только нейросеть решает
-        prompt = self.country_settings.get("filter_prompt", "") + f"""
-    Profile data:
-    Name: {profile_data.get('full_name', '')}
-    Username: {profile_data.get('username', '')}
-    Bio: {profile_data.get('biography', '')}
-    Location: {profile_data.get('location', 'not specified')}
-    Age: {profile_data.get('age', 'not specified')}
+        location_info = f"Location: {profile_data.get('location', 'not specified')}\n" if self.parse_location else ""
 
-    Answer ONLY 'Yes' or 'No' and briefly explain (up to 5 words). Do NOT pass any profile if there is ANY suspicion of female gender, even ambiguous or unisex names. Reject all unclear and empty profiles by default.
-    """
+        prompt = self.country_settings.get("filter_prompt", "") + f"""
+Profile data:
+Name: {profile_data.get('full_name', '')}
+Username: {profile_data.get('username', '')}
+Bio: {profile_data.get('biography', '')}
+{location_info}Age: {profile_data.get('age', 'not specified')}
+
+Answer ONLY 'Yes' or 'No' and briefly explain (up to 5 words). Do NOT pass any profile if there is ANY suspicion of female gender, even ambiguous or unisex names. Reject all unclear and empty profiles by default.
+"""
         try:
             headers = {
                 'Authorization': f'Bearer {self.openrouter_api_key}',
@@ -438,29 +371,26 @@ class InstagramScraperThread(threading.Thread):
             return 'no (error)'
 
     def simple_country_check(self, profile_data):
-        """Quick check using country-specific patterns"""
         name = (profile_data.get('full_name') or '').lower()
         username = (profile_data.get('username') or '').lower()
         bio = (profile_data.get('biography') or '').lower()
         location = (profile_data.get('location') or '').lower()
 
-        # Check name patterns
         name_patterns = self.country_settings.get("name_patterns", [])
         for pattern in name_patterns:
             if pattern in name or pattern in username:
                 return True
 
-        # Check bio keywords
         bio_keywords = self.country_settings.get("bio_keywords", [])
         for keyword in bio_keywords:
             if keyword in bio:
                 return True
 
-        # Check location priority
-        location_priority = self.country_settings.get("location_priority", [])
-        for loc in location_priority:
-            if loc in location:
-                return True
+        if self.parse_location:  # Проверяем локацию только если включен сбор локаций
+            location_priority = self.country_settings.get("location_priority", [])
+            for loc in location_priority:
+                if loc in location:
+                    return True
 
         return False
 
@@ -470,7 +400,6 @@ class InstagramScraperThread(threading.Thread):
             try:
                 item = self.profile_queue.get(timeout=60)
             except queue.Empty:
-                # Если очередь каналов тоже пуста — значит всё, выходим
                 if self.channel_queue.empty() and self.profile_queue.empty():
                     print(f'[Thread {self.thread_id}] Завершает работу — очереди пусты.')
                     break
@@ -497,7 +426,7 @@ class InstagramScraperThread(threading.Thread):
                 self.profile_queue.task_done()
                 continue
 
-            location = self._get_user_location(username)
+            location = self._get_user_location(username) if self.parse_location else None
             age = ''
             bio = profile.get('biography', '')
             if bio:
@@ -563,6 +492,13 @@ def main():
         print("[!] Invalid country selection")
         return
 
+    # Select parsing mode
+    print("\nSelect parsing mode:")
+    print("1. With location collection (slower but more accurate)")
+    print("2. Without location collection (faster)")
+    mode_choice = input("Enter choice (1 or 2): ").strip()
+    parse_location = mode_choice == '1'
+
     target_profiles = input("How many target profiles to find? (leave empty for unlimited): ").strip()
     target_profiles = int(target_profiles) if target_profiles else None
 
@@ -621,7 +557,8 @@ def main():
         country=selected_country,
         driver=drivers[0],
         lock=lock,
-        target_profiles=target_profiles
+        target_profiles=target_profiles,
+        parse_location=parse_location
     )
 
     # Create profile processing threads
@@ -637,7 +574,8 @@ def main():
             country=selected_country,
             driver=drivers[i],
             lock=lock,
-            target_profiles=target_profiles
+            target_profiles=target_profiles,
+            parse_location=parse_location
         ))
 
     # Start all threads
@@ -670,7 +608,6 @@ def main():
         for source, count in sources.items():
             print(f'{source}: {count} profiles')
 
-        # Save list of parsed channels
         parsed_channels = set()
         with open('checked_profiles.txt', 'r', encoding='utf-8') as f:
             for line in f:
